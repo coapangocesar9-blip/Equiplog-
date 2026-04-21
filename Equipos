@@ -1,0 +1,405 @@
+import { useState, useMemo } from "react";
+
+// â”€â”€â”€ DATA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const EQUIPMENT_TYPES = {
+  compressor: {
+    label: "Compresor", icon: "âš™ï¸", color: "#FF6B35",
+    faultTypes: ["Alta temperatura de descarga","Baja presiÃ³n de succiÃ³n","Alta presiÃ³n de descarga",
+      "VibraciÃ³n excesiva","Fuga de aceite","Fuga de gas","Falla en vÃ¡lvulas","Falla en cojinetes",
+      "Sobrecalentamiento de motor","Falla en sistema de enfriamiento","Ruido anormal",
+      "Alta corriente elÃ©ctrica","Paro por seguridad","Falla en instrumentaciÃ³n","Otro"],
+  },
+  cryogenic_pump: {
+    label: "Bomba CriogÃ©nica", icon: "â„ï¸", color: "#00B4D8",
+    faultTypes: ["CavitaciÃ³n","Fuga criogÃ©nica","PÃ©rdida de vacÃ­o (aislamiento)","Alta temperatura de carcasa",
+      "Baja eficiencia de bombeo","VibraciÃ³n excesiva","Falla en sello mecÃ¡nico","Falla en rodamientos",
+      "Paro por alta temperatura","Falla en sistema elÃ©ctrico","ContaminaciÃ³n del fluido",
+      "Flujo insuficiente","PresiÃ³n anormal","Falla en instrumentaciÃ³n","Otro"],
+  },
+};
+
+const SEVERITY = [
+  { id: "critical", label: "CrÃ­tica",  color: "#FF1744", dot: "ðŸ”´" },
+  { id: "high",     label: "Alta",     color: "#FF6B35", dot: "ðŸŸ " },
+  { id: "medium",   label: "Media",    color: "#FFB300", dot: "ðŸŸ¡" },
+  { id: "low",      label: "Baja",     color: "#00C853", dot: "ðŸŸ¢" },
+];
+
+const STATUS = [
+  { id: "open",          label: "Abierta",               color: "#FF1744" },
+  { id: "in_progress",   label: "En proceso",             color: "#FFB300" },
+  { id: "resolved",      label: "Resuelta",               color: "#00C853" },
+  { id: "pending_parts", label: "Esperando refacciones",  color: "#7C4DFF" },
+];
+
+const CAUSA_RAIZ_CATS = ["MÃ¡quina","MÃ©todo","Mano de obra","Material","MediciÃ³n","Medio ambiente"];
+
+const INITIAL = [
+  {
+    id: 1, equipmentType:"compressor", equipmentId:"COMP-001", location:"Planta A - Ãrea 3",
+    faultType:"Alta temperatura de descarga", severity:"critical", status:"resolved",
+    description:"Temperatura de descarga llegÃ³ a 185Â°C, lÃ­mite es 170Â°C. Filtro de aceite obstruido.",
+    reportedBy:"Carlos MÃ©ndez", date:"2026-04-10", time:"08:30",
+    resolution:"Cambio de filtro de aceite y limpieza del sistema.", downtime:3.5,
+    fiveWhys:["El compresor alcanzÃ³ alta temperatura","El aceite no circulaba correctamente",
+      "El filtro de aceite estaba obstruido","No se realizÃ³ el cambio de filtro en el intervalo programado",
+      "No existe alarma de diferencial de presiÃ³n en filtro"],
+    causaRaizCategoria:"MÃ©todo", causaRaizDescripcion:"Falta de programa de mantenimiento preventivo con alertas de diferencial de presiÃ³n.",
+    accionCorrectiva:"Instalar sensor de Î”P en filtro y programar alarma en PLC.", resuelto: true,
+  },
+  {
+    id: 2, equipmentType:"cryogenic_pump", equipmentId:"BCP-003", location:"Planta B - Llenadora",
+    faultType:"PÃ©rdida de vacÃ­o (aislamiento)", severity:"high", status:"in_progress",
+    description:"Escarcha en carcasa exterior. Posible daÃ±o en aislamiento de vacÃ­o.",
+    reportedBy:"Ana Reyes", date:"2026-04-15", time:"14:15",
+    resolution:"", downtime:8,
+    fiveWhys:["Se detectÃ³ escarcha en carcasa","El aislamiento de vacÃ­o fallÃ³","","",""],
+    causaRaizCategoria:"MÃ¡quina", causaRaizDescripcion:"",
+    accionCorrectiva:"", resuelto: false,
+  },
+  {
+    id: 3, equipmentType:"compressor", equipmentId:"COMP-001", location:"Planta A - Ãrea 3",
+    faultType:"VibraciÃ³n excesiva", severity:"medium", status:"resolved",
+    description:"VibraciÃ³n medida en 12 mm/s, lÃ­mite operativo es 7 mm/s.",
+    reportedBy:"Luis Torres", date:"2026-03-22", time:"06:45",
+    resolution:"Balanceo de impulsor y ajuste de anclaje.", downtime:5,
+    fiveWhys:["VibraciÃ³n fuera de lÃ­mite","Desbalance en impulsor","AcumulaciÃ³n de hielo en impulsor",
+      "Temperatura de succiÃ³n alta generÃ³ evaporaciÃ³n prematura","Setpoint de temperatura incorrecto tras mantenimiento previo"],
+    causaRaizCategoria:"Mano de obra", causaRaizDescripcion:"Setpoint mal configurado post-mantenimiento.",
+    accionCorrectiva:"Crear checklist de puesta en marcha post-mantenimiento.", resuelto: true,
+  },
+  {
+    id: 4, equipmentType:"cryogenic_pump", equipmentId:"BCP-001", location:"Planta A - Llenadora",
+    faultType:"CavitaciÃ³n", severity:"high", status:"resolved",
+    description:"Ruido de cavitaciÃ³n y caÃ­da de flujo en BCP-001.",
+    reportedBy:"Carlos MÃ©ndez", date:"2026-03-10", time:"10:00",
+    resolution:"Ajuste de presiÃ³n de succiÃ³n y purga del sistema.", downtime:2,
+    fiveWhys:["CavitaciÃ³n en bomba","PresiÃ³n de succiÃ³n insuficiente","Nivel bajo en tanque de almacenamiento",
+      "VÃ¡lvula de llenado cerrada por error de operaciÃ³n","Falta de enclavamiento fÃ­sico en vÃ¡lvula"],
+    causaRaizCategoria:"MÃ©todo", causaRaizDescripcion:"Sin enclavamiento en vÃ¡lvula crÃ­tica.",
+    accionCorrectiva:"Instalar enclavamiento y alarma de nivel bajo.", resuelto: true,
+  },
+];
+
+// â”€â”€â”€ UTILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const getSev  = (id) => SEVERITY.find(s => s.id === id) || SEVERITY[2];
+const getStat = (id) => STATUS.find(s => s.id === id)   || STATUS[0];
+const getEq   = (id) => EQUIPMENT_TYPES[id];
+
+function calcMTBF(recs) {
+  const resolved = recs.filter(r => r.status === "resolved" && r.downtime > 0);
+  if (resolved.length < 2) return null;
+  const sorted = [...resolved].sort((a,b) => new Date(a.date)-new Date(b.date));
+  let gaps = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const diff = (new Date(sorted[i].date) - new Date(sorted[i-1].date)) / 36e5;
+    gaps.push(diff);
+  }
+  return (gaps.reduce((a,b)=>a+b,0)/gaps.length).toFixed(1);
+}
+
+function calcMTTR(recs) {
+  const resolved = recs.filter(r => r.status === "resolved" && r.downtime > 0);
+  if (!resolved.length) return null;
+  return (resolved.reduce((a,r)=>a+r.downtime,0)/resolved.length).toFixed(1);
+}
+
+// â”€â”€â”€ STYLES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const C = {
+  bg:      "#080C14",
+  surface: "#0E1520",
+  card:    "#121B28",
+  border:  "#1A2840",
+  text:    "#D8E4F0",
+  muted:   "#4A6480",
+  accent:  "#FF6B35",
+};
+
+const S = {
+  app: {
+    fontFamily: "'Rajdhani', 'IBM Plex Sans', sans-serif",
+    background: C.bg, minHeight:"100vh", maxWidth:430,
+    margin:"0 auto", color:C.text, position:"relative", overflowX:"hidden",
+  },
+  header: {
+    background:`linear-gradient(135deg, ${C.surface}, #0A1525)`,
+    borderBottom:`1px solid ${C.border}`, padding:"14px 18px 10px",
+    position:"sticky", top:0, zIndex:100,
+  },
+  screen: { padding:"14px 14px 100px", overflowY:"auto", maxHeight:"calc(100vh - 120px)" },
+  card: (border) => ({
+    background: C.card, border:`1px solid ${border||C.border}`,
+    borderRadius:14, padding:14, marginBottom:10,
+  }),
+  label: { fontSize:10, fontWeight:700, color:C.muted, letterSpacing:"0.8px",
+    textTransform:"uppercase", marginBottom:5, display:"block" },
+  input: {
+    width:"100%", background:"#090E18", border:`1px solid ${C.border}`,
+    borderRadius:10, padding:"11px 13px", color:C.text, fontSize:13,
+    outline:"none", boxSizing:"border-box", fontFamily:"inherit",
+  },
+  select: {
+    width:"100%", background:"#090E18", border:`1px solid ${C.border}`,
+    borderRadius:10, padding:"11px 13px", color:C.text, fontSize:13,
+    outline:"none", boxSizing:"border-box", appearance:"none", fontFamily:"inherit",
+  },
+  badge: (color) => ({
+    display:"inline-flex", alignItems:"center", gap:4,
+    background:`${color}20`, color:color, fontSize:10, fontWeight:700,
+    padding:"3px 9px", borderRadius:20, letterSpacing:"0.3px", border:`1px solid ${color}35`,
+  }),
+  btn: (color, outline) => ({
+    background: outline ? "transparent" : color,
+    border: `1.5px solid ${color}`,
+    color: outline ? color : "#fff",
+    borderRadius:11, padding:"12px 16px", fontSize:13, fontWeight:700,
+    cursor:"pointer", width:"100%", letterSpacing:"0.3px", fontFamily:"inherit",
+  }),
+  fab: {
+    position:"fixed", bottom:82, right:18, width:56, height:56, borderRadius:"50%",
+    background:`linear-gradient(135deg, #FF6B35, #FF1744)`,
+    color:"#fff", fontSize:26, border:"none", cursor:"pointer",
+    display:"flex", alignItems:"center", justifyContent:"center",
+    boxShadow:"0 4px 24px #FF6B3555", zIndex:200,
+  },
+  nav: {
+    position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
+    width:"100%", maxWidth:430, background:"#08101A",
+    borderTop:`1px solid ${C.border}`, display:"flex", padding:"8px 0 14px", zIndex:150,
+  },
+  navItem: (a) => ({
+    flex:1, display:"flex", flexDirection:"column", alignItems:"center",
+    gap:3, cursor:"pointer", padding:"5px 0",
+    opacity: a ? 1 : 0.35, transition:"opacity 0.2s",
+  }),
+  navLbl: (a) => ({ fontSize:9, fontWeight:a?700:400, color:a?"#FF6B35":C.muted, letterSpacing:"0.5px" }),
+  sectionTitle: { fontSize:10, fontWeight:700, color:C.muted, letterSpacing:"1.2px",
+    textTransform:"uppercase", marginBottom:10, marginTop:2 },
+  whyBox: (i) => ({
+    background:"#090E18", border:`1px solid ${C.border}`,
+    borderLeft:`3px solid ${["#FF1744","#FF6B35","#FFB300","#00B4D8","#00C853"][i]}`,
+    borderRadius:"0 10px 10px 0", padding:"10px 12px", marginBottom:8,
+  }),
+  catBtn: (active, color) => ({
+    padding:"7px 10px", borderRadius:10, fontSize:11, fontWeight:700, cursor:"pointer",
+    border:`1.5px solid ${active ? color : C.border}`,
+    background: active ? `${color}20` : "#090E18",
+    color: active ? color : C.muted, letterSpacing:"0.3px", fontFamily:"inherit",
+    whiteSpace:"nowrap",
+  }),
+  metricBox: (color) => ({
+    background:`${color}12`, border:`1px solid ${color}30`,
+    borderRadius:12, padding:"12px 14px", flex:1, textAlign:"center",
+  }),
+};
+
+// â”€â”€â”€ MAIN APP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export default function App() {
+  const [view,       setView]       = useState("dashboard");
+  const [records,    setRecords]    = useState(INITIAL);
+  const [selected,   setSelected]   = useState(null);
+  const [editRec,    setEditRec]    = useState(null);
+  const [filterType, setFilterType] = useState("all");
+  const [filterStat, setFilterStat] = useState("all");
+  const [histEqId,   setHistEqId]   = useState(null);
+  const [notif,      setNotif]      = useState(null);
+
+  const blankForm = () => ({
+    equipmentType:"compressor", equipmentId:"", location:"", faultType:"",
+    severity:"medium", status:"open", description:"", reportedBy:"",
+    date: new Date().toISOString().split("T")[0],
+    time: new Date().toTimeString().slice(0,5),
+    resolution:"", downtime:0,
+    fiveWhys:["","","","",""],
+    causaRaizCategoria:"MÃ¡quina", causaRaizDescripcion:"",
+    accionCorrectiva:"", resuelto:false,
+  });
+
+  const [form, setForm] = useState(blankForm());
+
+  const toast = (msg, type="ok") => {
+    setNotif({msg,type});
+    setTimeout(()=>setNotif(null), 2600);
+  };
+
+  // Equipment IDs for history
+  const equipIds = useMemo(()=>[...new Set(records.map(r=>r.equipmentId))].sort(),[records]);
+
+  // Stats
+  const stats = useMemo(()=>({
+    total:       records.length,
+    critical:    records.filter(r=>r.severity==="critical").length,
+    open:        records.filter(r=>r.status==="open").length,
+    resolved:    records.filter(r=>r.status==="resolved").length,
+    withRCA:     records.filter(r=>r.fiveWhys?.[4]?.trim()).length,
+    compressors: records.filter(r=>r.equipmentType==="compressor").length,
+    cryogenic:   records.filter(r=>r.equipmentType==="cryogenic_pump").length,
+  }),[records]);
+
+  const filtered = useMemo(()=> records.filter(r=>{
+    if (filterType!=="all" && r.equipmentType!==filterType) return false;
+    if (filterStat!=="all" && r.status!==filterStat) return false;
+    return true;
+  }),[records, filterType, filterStat]);
+
+  // Recurring faults detection
+  const recurring = useMemo(()=>{
+    const map = {};
+    records.forEach(r=>{ const k=`${r.equipmentId}::${r.faultType}`; map[k]=(map[k]||0)+1; });
+    return Object.entries(map).filter(([,v])=>v>=2).map(([k,v])=>({key:k,count:v}));
+  },[records]);
+
+  // Handlers
+  const openNew = () => { setEditRec(null); setForm(blankForm()); setView("form"); };
+  const openEdit = (r) => { setEditRec(r); setForm({...r}); setView("form"); };
+
+  const handleSubmit = () => {
+    if (!form.equipmentId||!form.faultType||!form.description||!form.reportedBy){
+      toast("Completa los campos requeridos","err"); return;
+    }
+    if (editRec) {
+      setRecords(records.map(r=>r.id===editRec.id?{...form,id:editRec.id}:r));
+      toast("Registro actualizado âœ“");
+    } else {
+      setRecords([{...form, id:Date.now()}, ...records]);
+      toast("Falla registrada âœ“");
+    }
+    setView("list");
+  };
+
+  const deleteRec = (id) => {
+    setRecords(records.filter(r=>r.id!==id));
+    setSelected(null); setView("list"); toast("Eliminado");
+  };
+
+  const setWhy = (i,v) => setForm(f=>{ const w=[...f.fiveWhys]; w[i]=v; return {...f,fiveWhys:w}; });
+
+  // â”€â”€ DASHBOARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const Dashboard = () => (
+    <div style={S.screen}>
+      <div style={{marginBottom:18}}>
+        <div style={{fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>Panel de Control</div>
+        <div style={{fontSize:11,color:C.muted}}>
+          {new Date().toLocaleDateString("es-MX",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}
+        </div>
+      </div>
+
+      {stats.critical>0 && (
+        <div style={{...S.card("#FF1744"), display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
+          <span style={{fontSize:26}}>ðŸš¨</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:"#FF1744"}}>
+              {stats.critical} falla{stats.critical>1?"s":""} crÃ­tica{stats.critical>1?"s":""}
+            </div>
+            <div style={{fontSize:11,color:C.muted}}>Requiere atenciÃ³n inmediata</div>
+          </div>
+        </div>
+      )}
+
+      {recurring.length>0 && (
+        <div style={{...S.card("#FFB300"), marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#FFB300",marginBottom:8}}>
+            âš ï¸ FALLAS RECURRENTES DETECTADAS
+          </div>
+          {recurring.map(r=>(
+            <div key={r.key} style={{fontSize:11,color:C.text,marginBottom:4}}>
+              â€¢ {r.key.split("::")[0]} â€” <span style={{color:"#FFB300"}}>{r.key.split("::")[1]}</span>
+              <span style={{color:C.muted}}> ({r.count}x)</span>
+            </div>
+          ))}
+          <div style={{fontSize:10,color:C.muted,marginTop:6}}>ðŸ’¡ Prioriza RCA en estos equipos</div>
+        </div>
+      )}
+
+      {/* KPI grid */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9,marginBottom:16}}>
+        {[
+          {label:"Total fallas",   val:stats.total,    color:"#FF6B35"},
+          {label:"Abiertas",       val:stats.open,     color:"#FF1744"},
+          {label:"Con RCA completo",val:stats.withRCA,  color:"#00C853"},
+          {label:"Resueltas",      val:stats.resolved, color:"#00B4D8"},
+        ].map(k=>(
+          <div key={k.label} style={S.metricBox(k.color)}>
+            <div style={{fontSize:34,fontWeight:900,color:k.color,lineHeight:1}}>{k.val}</div>
+            <div style={{fontSize:10,color:C.muted,marginTop:4,textTransform:"uppercase",letterSpacing:"0.4px"}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* By type */}
+      <div style={S.sectionTitle}>Por tipo de equipo</div>
+      <div style={{display:"flex",gap:9,marginBottom:18}}>
+        {Object.entries(EQUIPMENT_TYPES).map(([key,eq])=>(
+          <div key={key} style={{...S.metricBox(eq.color), display:"flex", alignItems:"center", gap:10}}>
+            <span style={{fontSize:22}}>{eq.icon}</span>
+            <div>
+              <div style={{fontSize:22,fontWeight:800,color:eq.color}}>
+                {records.filter(r=>r.equipmentType===key).length}
+              </div>
+              <div style={{fontSize:9,color:C.muted}}>{eq.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* RCA coverage */}
+      <div style={S.sectionTitle}>Cobertura de anÃ¡lisis RCA</div>
+      <div style={{...S.card(), marginBottom:18}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:12,color:C.text}}>5 PorquÃ©s completados</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#00C853"}}>
+            {stats.withRCA}/{stats.total}
+          </span>
+        </div>
+        <div style={{background:"#090E18",borderRadius:6,height:8,overflow:"hidden"}}>
+          <div style={{
+            height:"100%", borderRadius:6,
+            width:`${stats.total?((stats.withRCA/stats.total)*100):0}%`,
+            background:"linear-gradient(90deg,#00C853,#00B4D8)",
+            transition:"width 0.6s ease",
+          }}/>
+        </div>
+        <div style={{fontSize:10,color:C.muted,marginTop:6}}>
+          {stats.total - stats.withRCA} falla{stats.total-stats.withRCA!==1?"s":""} pendiente{stats.total-stats.withRCA!==1?"s":""} de RCA
+        </div>
+      </div>
+
+      {/* Recent */}
+      <div style={S.sectionTitle}>Ãšltimas fallas</div>
+      {records.slice(0,3).map(r=>{
+        const sv=getSev(r.severity); const eq=getEq(r.equipmentType);
+        return (
+          <div key={r.id} style={{...S.card(), borderLeft:`4px solid ${sv.color}`, cursor:"pointer"}}
+            onClick={()=>{setSelected(r);setView("detail");}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+              <div style={{fontWeight:700,fontSize:13}}>{eq.icon} {r.equipmentId}</div>
+              <span style={S.badge(sv.color)}>{sv.dot} {sv.label}</span>
+            </div>
+            <div style={{fontSize:11,color:"#8899BB",marginBottom:5}}>{r.faultType}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:10,color:r.fiveWhys?.[4]?.trim()?"#00C853":C.muted}}>
+                {r.fiveWhys?.[4]?.trim() ? "âœ… RCA completo" : "â³ RCA pendiente"}
+              </span>
+              <span style={{fontSize:10,color:C.muted}}>{r.date}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // â”€â”€ LIST VIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const ListView = () => (
+    <div style={S.screen}>
+      <div style={{fontSize:18,fontWeight:800,marginBottom:14}}>Registro de Fallas</div>
+
+      {/* Filters */}
+      <div style={{display:"flex",gap:6,marginBottom:9,overflowX:"auto",paddingBottom:2}}>
+        {[{id:"all",label:"Todos"},{id:"compressor",label:"âš™ï¸ Comp."},{id:"cryogenic_pump",label:"â„ï¸ Criog."}].map(f=>(
+          <button key={f.id} style={S.catBtn(filterType===f.id,"#FF6B35")}
+            onClick={()=>setFilterType(f.id)}>{f.label}</button>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:2}}>
+        {[{id:"all",label:"Todos",color:"#FF6B35"},...STATUS].map(s=>(
+          <button
